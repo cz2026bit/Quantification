@@ -90,6 +90,41 @@ def bollinger(df: pd.DataFrame, period: int = 20, num_std: int = 2) -> pd.Series
     return signal.astype(int)
 
 
+def macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+    """MACD：快慢指数均线之差(DIF)上穿其信号线(DEA)则持有，下穿则空仓。
+
+    比双均线更平滑，是趋势类里最常用的择时指标之一。
+    """
+    ema_fast = df["close"].ewm(span=fast, adjust=False).mean()
+    ema_slow = df["close"].ewm(span=slow, adjust=False).mean()
+    dif = ema_fast - ema_slow                       # MACD 线
+    dea = dif.ewm(span=signal, adjust=False).mean()  # 信号线
+    return (dif > dea).astype(int)
+
+
+def momentum(df: pd.DataFrame, lookback: int = 20) -> pd.Series:
+    """动量：今天收盘价高于 lookback 天前则持有，否则空仓（强者恒强）。"""
+    past = df["close"].shift(lookback)
+    return (df["close"] > past).astype(int)
+
+
+def breakout(df: pd.DataFrame, entry: int = 20, exit: int = 10) -> pd.Series:
+    """唐奇安通道突破（海龟法则简化版）。
+
+    收盘价突破过去 entry 天最高价 -> 买入；
+    跌破过去 exit 天最低价 -> 卖出；其余维持上一状态。
+    用 shift(1) 取"过去"区间，避免把当天计入而产生未来函数。
+    """
+    upper = df["close"].rolling(entry).max().shift(1)
+    lower = df["close"].rolling(exit).min().shift(1)
+
+    sig = pd.Series(index=df.index, dtype="float64")
+    sig[df["close"] > upper] = 1
+    sig[df["close"] < lower] = 0
+    sig = sig.ffill().fillna(0)
+    return sig.astype(int)
+
+
 # 策略注册表：界面与回测都从这里读取
 STRATEGIES: Dict[str, Strategy] = {
     "ma_cross": Strategy(
@@ -121,6 +156,36 @@ STRATEGIES: Dict[str, Strategy] = {
         params=[
             Param("period", "中轨周期", 20, 5, 120),
             Param("num_std", "标准差倍数", 2, 1, 4),
+        ],
+    ),
+    "macd": Strategy(
+        key="macd",
+        label="MACD",
+        description="DIF 上穿信号线买入、下穿卖出。比双均线更平滑的趋势择时。",
+        func=macd,
+        params=[
+            Param("fast", "快线 EMA", 12, 3, 60),
+            Param("slow", "慢线 EMA", 26, 10, 120),
+            Param("signal", "信号线 EMA", 9, 3, 30),
+        ],
+    ),
+    "momentum": Strategy(
+        key="momentum",
+        label="动量",
+        description="价格高于 N 天前则持有、否则空仓。最朴素的『强者恒强』。",
+        func=momentum,
+        params=[
+            Param("lookback", "回看天数", 20, 5, 120),
+        ],
+    ),
+    "breakout": Strategy(
+        key="breakout",
+        label="唐奇安通道突破（海龟）",
+        description="突破近 N 天最高价买入、跌破近 M 天最低价卖出。经典趋势突破。",
+        func=breakout,
+        params=[
+            Param("entry", "突破入场窗口", 20, 5, 120),
+            Param("exit", "突破出场窗口", 10, 3, 60),
         ],
     ),
     "overnight": Strategy(

@@ -112,8 +112,12 @@ if run:
     c4.metric("夏普比率", f"{result.sharpe:.2f}")
     c5.metric("换手次数", f"{result.num_trades}")
 
-    # 真实股价图（带买卖点）——单位是该股票的货币，方便核对价格
-    st.plotly_chart(plotting.price_chart(df, result), use_container_width=True)
+    # 真实股价图——单位是该股票的货币，方便核对价格。
+    # 隔夜策略每天都买卖，逐点标注没有意义，故不画买卖点。
+    st.plotly_chart(
+        plotting.price_chart(df, result, show_signals=not strategy.overnight),
+        use_container_width=True,
+    )
 
     # 净值曲线：把初始资金归一化为 1.0，反映"投 1 块钱跟着策略走会变成几块钱"，
     # 不是股票价格本身，所以 Y 轴在 1.0 附近是正常的。

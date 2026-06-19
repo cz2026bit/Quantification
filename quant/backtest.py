@@ -111,6 +111,79 @@ def run_backtest(
     return result
 
 
+def run_overnight_backtest(
+    df: pd.DataFrame,
+    signal: pd.Series,
+    fee: float = 0.0003,
+    position_size: float = 1.0,
+) -> BacktestResult:
+    """隔夜策略专用回测：当日尾盘买入、次日开盘卖出。
+
+    与 run_backtest 的根本区别：
+        * 普通回测赚的是「收盘→收盘」的收益；
+        * 隔夜回测赚的是「当日收盘 → 次日开盘」这一段跳空收益，
+          即 overnight[t] = open[t] / close[t-1] - 1。
+        * 隔夜策略**每天都要买卖一次**（尾盘买、早盘卖），所以每参与一晚
+          都要付一次买入 + 一次卖出 = 2 倍单边手续费，费用拖累远大于普通策略。
+
+    Args:
+        signal: 0/1，表示「今晚是否持有」。本策略恒为 1（每晚都参与）。
+    """
+    open_ = df["open"]
+    close = df["close"]
+
+    # 隔夜收益：昨日收盘买入、今日开盘卖出
+    overnight = (open_ / close.shift(1) - 1).fillna(0)
+
+    # 是否参与某晚由前一日收盘信号决定（同样 shift，杜绝未来函数）
+    participate = (signal.shift(1).fillna(0).clip(0, 1) * float(position_size))
+
+    # 每参与一晚 = 一次买入 + 一次卖出 = 2 倍单边费
+    cost = (participate > 0).astype(float) * 2 * fee
+    strategy_return = participate * overnight - cost
+
+    equity = (1 + strategy_return).cumprod()
+    benchmark = (1 + close.pct_change().fillna(0)).cumprod()
+    drawdown = equity / equity.cummax() - 1
+
+    trades = _overnight_trades(df, participate)
+
+    return BacktestResult(
+        equity=equity,
+        benchmark=benchmark,
+        drawdown=drawdown,
+        position=participate,
+        trades=trades,
+        monthly=_monthly_returns(equity),
+        total_return=float(equity.iloc[-1] - 1),
+        annual_return=_annualized(equity),
+        annual_volatility=float(strategy_return.std() * np.sqrt(TRADING_DAYS)),
+        max_drawdown=float(drawdown.min()),
+        max_drawdown_days=_max_drawdown_days(drawdown),
+        sharpe=_sharpe(strategy_return),
+        sortino=_sortino(strategy_return),
+        calmar=_calmar(_annualized(equity), float(drawdown.min())),
+        win_rate=float((overnight[participate > 0] > 0).mean()) if (participate > 0).any() else 0.0,
+        num_trades=len(trades),
+    )
+
+
+def _overnight_trades(df: pd.DataFrame, participate: pd.Series) -> pd.DataFrame:
+    """隔夜策略逐笔：每参与一晚 = 一笔（昨收买入、今开卖出）。"""
+    cols = ["买入日", "买入价", "卖出日", "卖出价", "收益率", "持有天数"]
+    open_ = df["open"]
+    close = df["close"]
+    idx = participate.index
+    rows = []
+    for i in range(1, len(idx)):
+        if participate.iloc[i] <= 0:
+            continue
+        d_prev, d_now = idx[i - 1], idx[i]
+        p_buy, p_sell = close.iloc[i - 1], open_.iloc[i]
+        rows.append(_make_trade(d_prev, p_buy, d_now, p_sell))
+    return pd.DataFrame(rows, columns=cols)
+
+
 def _apply_stops(
     base: pd.Series,
     close: pd.Series,

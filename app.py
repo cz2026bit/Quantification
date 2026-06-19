@@ -97,7 +97,11 @@ if run:
         st.stop()
 
     signal = strategy.func(df, **params)
-    result = backtest.run_backtest(df, signal, fee=fee)
+    if strategy.overnight:
+        # 隔夜策略：尾盘买入、次日开盘卖出，走专用回测
+        result = backtest.run_overnight_backtest(df, signal, fee=fee)
+    else:
+        result = backtest.run_backtest(df, signal, fee=fee)
 
     # 关键指标卡片
     st.subheader("绩效概览")

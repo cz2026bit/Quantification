@@ -38,6 +38,18 @@ class Strategy:
     description: str
     func: Callable[..., pd.Series]
     params: list = field(default_factory=list)
+    # 为 True 时走 backtest.run_overnight_backtest（尾盘买、次日开盘卖），
+    # 而非普通的收盘到收盘回测。
+    overnight: bool = False
+
+
+def overnight_hold(df: pd.DataFrame) -> pd.Series:
+    """隔夜持有：每天都参与（恒为 1）。
+
+    真正的买卖时点由 backtest.run_overnight_backtest 处理——尾盘买入、
+    次日开盘卖出。这里只声明"每晚都持有"。
+    """
+    return pd.Series(1, index=df.index, dtype=int)
 
 
 def ma_cross(df: pd.DataFrame, fast: int = 5, slow: int = 20) -> pd.Series:
@@ -110,5 +122,16 @@ STRATEGIES: Dict[str, Strategy] = {
             Param("period", "中轨周期", 20, 5, 120),
             Param("num_std", "标准差倍数", 2, 1, 4),
         ],
+    ),
+    "overnight": Strategy(
+        key="overnight",
+        label="隔夜策略（尾盘买/开盘卖）",
+        description=(
+            "每天尾盘买入、次日开盘卖出，只赚『隔夜跳空』收益。"
+            "注意：每天买卖一次，手续费很重，请重点观察扣费后还剩多少。"
+        ),
+        func=overnight_hold,
+        params=[],
+        overnight=True,
     ),
 }

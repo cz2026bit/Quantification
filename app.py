@@ -98,6 +98,12 @@ if run:
     c4.metric("夏普比率", f"{result.sharpe:.2f}")
     c5.metric("换手次数", f"{result.num_trades}")
 
+    # 真实股价图（带买卖点）——单位是该股票的货币，方便核对价格
+    st.plotly_chart(plotting.price_chart(df, result), use_container_width=True)
+
+    # 净值曲线：把初始资金归一化为 1.0，反映"投 1 块钱跟着策略走会变成几块钱"，
+    # 不是股票价格本身，所以 Y 轴在 1.0 附近是正常的。
+    st.caption("ℹ️ 下面是**净值曲线**：初始资金记为 1.0，体现资金增长倍数，并非股价本身。")
     st.plotly_chart(plotting.equity_curve(result), use_container_width=True)
     st.plotly_chart(plotting.drawdown_curve(result), use_container_width=True)
 

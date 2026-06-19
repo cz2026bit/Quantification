@@ -13,7 +13,7 @@ import datetime as dt
 
 import streamlit as st
 
-from quant import backtest, data, plotting, strategies
+from quant import backtest, data, optimize, plotting, strategies
 
 # 常用标的预设，方便快速上手（也可在输入框手动填代码）
 PRESETS = {
@@ -77,6 +77,14 @@ with st.sidebar:
 
     run = st.button("开始回测", type="primary", use_container_width=True)
 
+    st.divider()
+    st.header("③ 参数寻优（可选）")
+    opt_metric_label = st.selectbox(
+        "寻优目标", ["累计收益", "夏普比率", "卡玛比率"],
+        help="网格搜索会按这个指标找最优参数组合",
+    )
+    optimize_run = st.button("🔍 自动找最优参数", use_container_width=True)
+
 
 # ---------------- 主区：结果展示 ----------------
 @st.cache_data(show_spinner=False)
@@ -85,16 +93,70 @@ def _load(symbol: str, market: str, start: dt.date, end: dt.date):
     return data.load_history(symbol, market, start, end)
 
 
-if run:
+def _get_data():
+    """按钮触发后统一取数，失败则提示并中止。"""
     if not symbol:
         st.error("请先填写股票代码。")
         st.stop()
     try:
         with st.spinner("正在获取行情数据…"):
-            df = _load(symbol, market, start, end)
+            return _load(symbol, market, start, end)
     except Exception as exc:  # 数据源异常统一兜底，提示用户
         st.error(f"获取数据失败：{exc}")
         st.stop()
+
+
+# 寻优指标中文标签 -> 内部列名
+_METRIC_MAP = {"累计收益": "total_return", "夏普比率": "sharpe", "卡玛比率": "calmar"}
+
+if optimize_run:
+    if not strategy.params:
+        st.warning(f"策略「{strategy.label}」没有可调参数，无需寻优。")
+        st.stop()
+    df = _get_data()
+    metric = _METRIC_MAP[opt_metric_label]
+    with st.spinner("正在网格搜索全部参数组合…"):
+        table = optimize.grid_search(df, strategy, fee=fee, metric=metric)
+
+    best = table.iloc[0]
+    pnames = [p.name for p in strategy.params]
+    plabels = {p.name: p.label for p in strategy.params}
+
+    st.subheader(f"🔍 「{strategy.label}」参数寻优结果")
+    st.caption(f"共测试 {len(table)} 种参数组合，按「{opt_metric_label}」排序。")
+
+    # 最优参数卡片
+    cols = st.columns(len(pnames) + 2)
+    for i, n in enumerate(pnames):
+        cols[i].metric(f"最优 {plabels[n]}", int(best[n]))
+    cols[-2].metric("累计收益", f"{best.total_return:.1%}")
+    cols[-1].metric("最大回撤", f"{best.max_drawdown:.1%}")
+
+    # 寻优图（折线/热力图）
+    st.plotly_chart(
+        plotting.optimization_chart(table, pnames, metric, opt_metric_label),
+        use_container_width=True,
+    )
+
+    st.markdown("**收益最高的前 10 组参数：**")
+    show = table.head(10).copy()
+    show["total_return"] = (show["total_return"] * 100).round(1)
+    show["max_drawdown"] = (show["max_drawdown"] * 100).round(1)
+    show["sharpe"] = show["sharpe"].round(2)
+    show = show.rename(columns={**plabels, "total_return": "累计收益%",
+                                "max_drawdown": "最大回撤%", "sharpe": "夏普",
+                                "calmar": "卡玛", "num_trades": "交易次数"})
+    st.dataframe(show, use_container_width=True, hide_index=True)
+
+    st.warning(
+        "⚠️ **小心过拟合**：这里的『最优参数』是在这段历史上挑出来的，"
+        "换一段时间或换只股票很可能失效。它帮你理解『参数如何影响结果』，"
+        "**不能直接拿去实盘**。务必把最优参数换到别的股票/时间段再验证一遍。"
+    )
+    st.stop()
+
+if run:
+    df = _get_data()
 
     signal = strategy.func(df, **params)
     if strategy.overnight:

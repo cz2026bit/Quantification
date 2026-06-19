@@ -127,3 +127,53 @@ def drawdown_curve(result: BacktestResult) -> go.Figure:
         margin=dict(l=40, r=20, t=60, b=40),
     )
     return fig
+
+
+def optimization_chart(
+    result: pd.DataFrame,
+    param_names: list,
+    metric: str = "total_return",
+    metric_label: str = "累计收益",
+) -> go.Figure:
+    """参数寻优结果可视化。
+
+    - 1 个参数：折线图（横轴=参数值，纵轴=指标）；
+    - 2 个参数：热力图（两轴=两个参数，颜色=指标）；
+    - 3+ 个参数：取最重要的两个参数画热力图（其余固定在最优值附近）。
+    """
+    if len(param_names) == 1:
+        p = param_names[0]
+        s = result.sort_values(p)
+        fig = go.Figure(
+            go.Scatter(x=s[p], y=s[metric] * 100, mode="lines+markers",
+                       line=dict(color="#d62728"))
+        )
+        fig.update_layout(
+            title=f"参数寻优：{p} 对{metric_label}的影响",
+            xaxis_title=p, yaxis_title=f"{metric_label} %",
+            margin=dict(l=40, r=20, t=60, b=40),
+        )
+        return fig
+
+    # 2 个及以上参数：用前两个画热力图（多于 2 个时其余取各自众数切片）
+    px, py = param_names[0], param_names[1]
+    data = result
+    for extra in param_names[2:]:
+        best_val = result.iloc[0][extra]  # 最优组合里该参数的取值
+        data = data[data[extra] == best_val]
+
+    grid = data.pivot_table(index=py, columns=px, values=metric, aggfunc="mean")
+    fig = go.Figure(
+        go.Heatmap(
+            z=grid.values * 100,
+            x=grid.columns, y=grid.index,
+            colorscale="RdYlGn", colorbar=dict(title=f"{metric_label}%"),
+            hovertemplate=f"{px}=%{{x}}<br>{py}=%{{y}}<br>{metric_label}=%{{z:.0f}}%<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=f"参数寻优热力图：{px} × {py} 对{metric_label}的影响",
+        xaxis_title=px, yaxis_title=py,
+        margin=dict(l=40, r=20, t=60, b=40),
+    )
+    return fig

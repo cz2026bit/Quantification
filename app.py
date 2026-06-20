@@ -198,10 +198,14 @@ if run:
         help="同期买入持有不动的收益。策略只有跑赢它才算真有用。",
     )
     r1[2].metric("年化收益", f"{result.annual_return:.1%}")
-    r2 = st.columns(3)
+    # 第二行集中放风险类指标：回撤 / 夏普 / 卡玛
+    r2 = st.columns(4)
     r2[0].metric("最大回撤", f"{result.max_drawdown:.1%}")
-    r2[1].metric("夏普比率", f"{result.sharpe:.2f}")
-    r2[2].metric("换手次数", f"{result.num_trades}")
+    r2[1].metric("夏普比率", f"{result.sharpe:.2f}",
+                 help="收益 ÷ 波动率，衡量『赚得稳不稳』。>1 不错，>2 优秀。")
+    r2[2].metric("卡玛比率", f"{result.calmar:.2f}",
+                 help="年化收益 ÷ 最大回撤，衡量『赚得扛不扛得住』。>1 不错，>3 优秀。")
+    r2[3].metric("换手次数", f"{result.num_trades}")
 
     # 真实股价图——单位是该股票的货币，方便核对价格。
     # 隔夜策略每天都买卖，逐点标注没有意义，故不画买卖点。

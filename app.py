@@ -126,16 +126,28 @@ if optimize_run:
     best = table.iloc[0]
     pnames = [p.name for p in strategy.params]
     plabels = {p.name: p.label for p in strategy.params}
+    # 持有收益对所有参数组合都一样（同股同期），算一次作为基准
+    hold_return = float(df["close"].iloc[-1] / df["close"].iloc[0] - 1)
 
     st.subheader(f"🔍 「{strategy.label}」参数寻优结果")
     st.caption(f"共测试 {len(table)} 种参数组合，按「{opt_metric_label}」排序。")
 
     # 最优参数卡片
-    cols = st.columns(len(pnames) + 2)
+    cols = st.columns(len(pnames) + 3)
     for i, n in enumerate(pnames):
         cols[i].metric(f"最优 {plabels[n]}", int(best[n]))
-    cols[-2].metric("累计收益", f"{best.total_return:.1%}")
+    cols[-3].metric(
+        "累计收益", f"{best.total_return:.1%}",
+        delta=f"{best.total_return - hold_return:+.1%} vs 持有",
+        help="最优参数的收益；箭头表示比『一直持有』多赚或少赚。",
+    )
+    cols[-2].metric("持有收益", f"{hold_return:.1%}", help="同期买入持有不动的收益。")
     cols[-1].metric("最大回撤", f"{best.max_drawdown:.1%}")
+
+    # 多少组参数跑赢了持有？给个直观提示
+    beat = int((table["total_return"] > hold_return).sum())
+    st.caption(f"📌 {len(table)} 组参数里，只有 **{beat}** 组跑赢了「持有收益」"
+               f"（{beat / len(table):.0%}）——跑赢比例越低，越说明这个策略在该股上不占优。")
 
     # 寻优图（折线/热力图）
     st.plotly_chart(
@@ -145,6 +157,7 @@ if optimize_run:
 
     st.markdown("**收益最高的前 10 组参数：**")
     show = table.head(10).copy()
+    show["超额收益%"] = ((show["total_return"] - hold_return) * 100).round(1)
     show["total_return"] = (show["total_return"] * 100).round(1)
     show["max_drawdown"] = (show["max_drawdown"] * 100).round(1)
     show["sharpe"] = show["sharpe"].round(2)
@@ -152,6 +165,7 @@ if optimize_run:
                                 "max_drawdown": "最大回撤%", "sharpe": "夏普",
                                 "calmar": "卡玛", "num_trades": "交易次数"})
     st.dataframe(show, use_container_width=True, hide_index=True)
+    st.caption(f"「超额收益%」= 该组参数收益 − 持有收益（{hold_return:.1%}）；正数才算跑赢躺平。")
 
     st.warning(
         "⚠️ **小心过拟合**：这里的『最优参数』是在这段历史上挑出来的，"

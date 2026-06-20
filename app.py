@@ -170,14 +170,24 @@ if run:
     else:
         result = backtest.run_backtest(df, signal, fee=fee)
 
-    # 关键指标卡片
+    # 关键指标卡片。持有收益 = 同期买入持有不动的收益，作为对比基准。
+    hold_return = float(result.benchmark.iloc[-1] - 1)
     st.subheader("绩效概览")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("累计收益", f"{result.total_return:.1%}")
-    c2.metric("年化收益", f"{result.annual_return:.1%}")
-    c3.metric("最大回撤", f"{result.max_drawdown:.1%}")
-    c4.metric("夏普比率", f"{result.sharpe:.2f}")
-    c5.metric("换手次数", f"{result.num_trades}")
+    r1 = st.columns(3)
+    r1[0].metric(
+        "累计收益", f"{result.total_return:.1%}",
+        delta=f"{result.total_return - hold_return:+.1%} vs 持有",
+        help="策略的总收益；下方绿/红箭头表示比『一直持有不动』多赚或少赚。",
+    )
+    r1[1].metric(
+        "持有收益", f"{hold_return:.1%}",
+        help="同期买入持有不动的收益。策略只有跑赢它才算真有用。",
+    )
+    r1[2].metric("年化收益", f"{result.annual_return:.1%}")
+    r2 = st.columns(3)
+    r2[0].metric("最大回撤", f"{result.max_drawdown:.1%}")
+    r2[1].metric("夏普比率", f"{result.sharpe:.2f}")
+    r2[2].metric("换手次数", f"{result.num_trades}")
 
     # 真实股价图——单位是该股票的货币，方便核对价格。
     # 隔夜策略每天都买卖，逐点标注没有意义，故不画买卖点。
